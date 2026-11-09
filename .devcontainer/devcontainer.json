@@ -1,0 +1,20 @@
+{
+  "name": "niche-finder",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "secrets": {
+    "YOUTUBE_API_KEY": {
+      "description": "Sua chave da YouTube Data API v3 (grátis, 10.000 unidades por dia)",
+      "documentationUrl": "https://console.cloud.google.com/apis/library/youtube.googleapis.com"
+    }
+  },
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "Painel do niche-finder", "onAutoForward": "openBrowser" }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start.sh"
+}

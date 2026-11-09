@@ -1,3 +1,5 @@
+> **Fork com Codespaces:** para abrir este projeto no GitHub Codespaces, sem instalar nada, siga o [COMECE-AQUI.md](COMECE-AQUI.md).
+
 # niche-finder
 
 **YouTube research for creators: find a niche that is growing, see which videos from small channels took off and why, and check your idea before you film it.**
