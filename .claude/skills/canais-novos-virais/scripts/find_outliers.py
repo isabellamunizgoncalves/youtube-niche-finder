@@ -354,7 +354,7 @@ def analyse(videos, channels, args, excluded):
         "mais_novo": lambda e: e["idade_dias"] or 99999,
     }[args.sort]
     results.sort(key=key)
-    return results[: args.limit]
+    return results if args.limit <= 0 else results[: args.limit]
 
 
 # ---------------------------------------------------------------- saida
@@ -456,7 +456,9 @@ def main():
                    help="Paginas por busca (cada pagina = 100 unidades de quota).")
     p.add_argument("--max-searches", type=int, default=10,
                    help="Teto de chamadas search.list. Padrao: 10 (= 1000 unidades).")
-    p.add_argument("--limit", type=int, default=20, help="Canais no relatorio.")
+    p.add_argument("--limit", type=int, default=0,
+                   help="Canais no relatorio. 0 (padrao) = todos "
+                        "os que passarem nos filtros.")
     p.add_argument("--videos-per-channel", type=int, default=3)
     p.add_argument("--sort", default="score",
                    choices=["score", "views_dia", "views_por_inscrito",

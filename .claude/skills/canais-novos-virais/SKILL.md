@@ -85,7 +85,7 @@ filtros mais frouxos, ou aprofundar um canal).
 | `--pages` | 1 | paginas por busca (cada pagina = 100 unidades) |
 | `--max-searches` | 10 | teto de chamadas de busca (controle de quota) |
 | `--sort` | score | score / views_dia / views_por_inscrito / melhor_video / mais_novo |
-| `--limit` | 20 | canais no relatorio |
+| `--limit` | 0 | canais no relatorio; 0 = todos os que passarem nos filtros |
 | `--exclude-file` | — | arquivo com channelIds para ignorar |
 | `--json` | — | salva o resultado bruto |
 | `--out` | — | salva o relatorio markdown |
