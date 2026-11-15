@@ -799,6 +799,27 @@ def _ler_classificacao(caminho):
         return out
 
 
+def _vd(v):
+    """views por dia — views acumulam, entao comparar views cruas e injusto."""
+    if v["views"] is None:
+        return None
+    return v["views"] / max(1, v.get("idade_dias") or 1)
+
+
+def stats_grupo(grupo):
+    views = [x["views"] for x in grupo if x["views"] is not None]
+    vds = [_vd(x) for x in grupo if _vd(x) is not None]
+    melhor = max(grupo, key=lambda x: x["views"] or 0)
+    return {
+        "n": len(grupo),
+        "media": sum(views) / len(views) if views else None,
+        "mediana": median(views) if views else None,
+        "vd_mediana": median(vds) if vds else None,
+        "melhor": melhor["titulo"],
+        "views_lista": sorted(views, reverse=True),
+    }
+
+
 def mistura(args):
     with open(args.dados, encoding="utf-8") as fh:
         coleta = json.load(fh)
@@ -806,7 +827,8 @@ def mistura(args):
     classif = _ler_classificacao(args.classificacao)
 
     faltando = [c["id"] for c in classif if c["id"] not in vids]
-    nao_classificados = [v for v in vids if v not in {c["id"] for c in classif}]
+    classificados = {c["id"] for c in classif}
+    nao_classificados = [v for v in vids if v not in classificados]
 
     itens = []
     for c in classif:
@@ -818,6 +840,7 @@ def mistura(args):
                 "id": c["id"],
                 "titulo": v["titulo"],
                 "views": v["views"],
+                "idade_dias": v.get("idade_dias"),
                 "publicado_em": v["publicado_em"],
                 "nicho": c["nicho"] or "(sem)",
                 "subnicho": c["subnicho"] or "(sem)",
@@ -832,29 +855,23 @@ def mistura(args):
 
     itens.sort(key=lambda x: x["publicado_em"] or "")
     n = len(itens)
+    MCHAVE = lambda x: f"{x['nicho']} > {x['subnicho']} > {x['micro']}"
 
-    niveis = {}
+    niveis, grupos_micro = {}, {}
     for nivel, chave in (
         ("nicho", lambda x: x["nicho"]),
         ("subnicho", lambda x: f"{x['nicho']} > {x['subnicho']}"),
-        ("microsubnicho", lambda x: f"{x['nicho']} > {x['subnicho']} > {x['micro']}"),
+        ("microsubnicho", MCHAVE),
     ):
         grupos = defaultdict(list)
         for it in itens:
             grupos[chave(it)].append(it)
+        if nivel == "microsubnicho":
+            grupos_micro = dict(grupos)
         tabela = []
         for nome, g in grupos.items():
-            s = stats_views(g)
-            tabela.append(
-                {
-                    "grupo": nome,
-                    "n": s["n"],
-                    "pct": round(100 * s["n"] / n, 1),
-                    "views_media": s["media"],
-                    "views_mediana": s["mediana"],
-                    "melhor": max(g, key=lambda x: x["views"] or 0)["titulo"],
-                }
-            )
+            st = stats_grupo(g)
+            tabela.append({"grupo": nome, "pct": round(100 * st["n"] / n, 1), **st})
         tabela.sort(key=lambda t: -t["n"])
         niveis[nivel] = tabela
 
@@ -877,58 +894,61 @@ def mistura(args):
         leitura = ("o canal faz coisas de areas diferentes. Problema de "
                    "identidade: publicos que nao se encontram.")
 
-    # ajudando ou atrapalhando: micro dominante x resto
-    dominante_nome = niveis["microsubnicho"][0]["grupo"]
-    dom = [
-        it
-        for it in itens
-        if f"{it['nicho']} > {it['subnicho']} > {it['micro']}" == dominante_nome
-    ]
-    ids_dom = {it["id"] for it in dom}
-    resto = [it for it in itens if it["id"] not in ids_dom]
-    s_dom, s_resto = stats_views(dom), stats_views(resto)
-    if not resto or s_dom["media"] is None or s_resto["media"] is None:
-        julgamento = None
-    else:
-        ratio = s_resto["media"] / s_dom["media"] if s_dom["media"] else None
-        if ratio is None:
-            julgamento = None
-        elif ratio >= 1.15:
-            julgamento = (
-                "ajudando", ratio,
-                "o que esta fora do micro principal faz MAIS views que o "
-                "principal. Vale olhar se o canal nao deveria pivotar para la.")
-        elif ratio <= 0.7:
-            julgamento = (
-                "atrapalhando", ratio,
-                "o que esta fora do micro principal faz bem menos views. "
-                "Esses videos diluem o canal sem retorno.")
-        else:
-            julgamento = (
-                "neutra", ratio,
-                "performance parecida dentro e fora do micro principal. "
-                "A mistura nao esta cobrando pedagio por enquanto.")
+    # ---- concentracao: as medias sao confiaveis ou artefato de outlier?
+    todas = sorted((x["views"] for x in itens if x["views"] is not None),
+                   reverse=True)
+    conc = {
+        "top2_pct": round(100 * sum(todas[:2]) / sum(todas), 1) if todas else None,
+        "mediana_canal": median(todas) if todas else None,
+        "media_canal": (sum(todas) / len(todas)) if todas else None,
+    }
 
-    # antigo vs recente
+    # ---- MICRO-ALVO: o que melhor performa, nao o que mais aparece.
+    tabela_micro = niveis["microsubnicho"]
+    com_vd = [t for t in tabela_micro if t["vd_mediana"] is not None]
+    candidatos = [t for t in com_vd if t["n"] >= args.min_amostra] or com_vd
+    alvo = max(candidatos, key=lambda t: t["vd_mediana"]) if candidatos else None
+    dominante = tabela_micro[0] if tabela_micro else None
+    alvo_fraco = bool(alvo) and alvo["n"] < args.min_amostra
+
+    julgamento = None
+    if alvo:
+        dentro = grupos_micro[alvo["grupo"]]
+        fora = [it for it in itens if MCHAVE(it) != alvo["grupo"]]
+        s_fora = stats_grupo(fora) if fora else None
+        if s_fora and s_fora["vd_mediana"] and alvo["vd_mediana"]:
+            ratio = s_fora["vd_mediana"] / alvo["vd_mediana"]
+            if ratio >= 1.15:
+                rotulo, texto = ("ajudando",
+                    "o que esta fora do micro-alvo entrega MAIS por dia. "
+                    "Reveja a escolha do alvo: pode haver outro micro melhor.")
+            elif ratio <= 0.7:
+                rotulo, texto = ("atrapalhando",
+                    "o resto do canal entrega bem menos por dia que o "
+                    "micro-alvo. Esses videos consomem producao sem retorno.")
+            else:
+                rotulo, texto = ("neutra",
+                    "desempenho parecido dentro e fora do micro-alvo. "
+                    "A mistura ainda nao esta cobrando pedagio.")
+            julgamento = (rotulo, ratio, texto, len(dentro), s_fora)
+
+    # ---- antigo vs recente
     corte = max(1, int(n * args.janela_recente))
     antigos, recentes = itens[:-corte], itens[-corte:]
 
-    def dominante(grupo, chave):
+    def dom(grupo):
         if not grupo:
             return None, 0
-        cnt = Counter(chave(x) for x in grupo)
-        nome, q = cnt.most_common(1)[0]
+        nome, q = Counter(MCHAVE(x) for x in grupo).most_common(1)[0]
         return nome, round(100 * q / len(grupo), 1)
 
-    mchave = lambda x: f"{x['nicho']} > {x['subnicho']} > {x['micro']}"
-    dom_antigo = dominante(antigos, mchave)
-    dom_recente = dominante(recentes, mchave)
+    dom_antigo, dom_recente = dom(antigos), dom(recentes)
     pivo = bool(antigos) and dom_antigo[0] != dom_recente[0]
 
     md = relatorio_mistura(
-        coleta, itens, niveis, veredito, leitura, julgamento,
+        coleta, itens, niveis, veredito, leitura, julgamento, conc,
         (dom_antigo, dom_recente, pivo, len(antigos), len(recentes)),
-        dominante_nome, s_dom, s_resto, faltando, nao_classificados, vids, foco,
+        alvo, dominante, alvo_fraco, args, faltando, nao_classificados, vids,
     )
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
@@ -939,47 +959,100 @@ def mistura(args):
 
 
 def relatorio_mistura(coleta, itens, niveis, veredito, leitura, julgamento,
-                      tempo, dominante_nome, s_dom, s_resto, faltando,
-                      nao_classificados, vids, foco):
+                      conc, tempo, alvo, dominante, alvo_fraco, args,
+                      faltando, nao_classificados, vids):
     c = coleta["canal"]
     L = []
     A = L.append
     A(f"# Diagnostico de mistura — {c['nome']}")
     A("")
     A(f"Base: {len(itens)} videos longos classificados "
-      f"(limiar de foco: {int(foco * 100)}% no mesmo grupo).")
+      f"(limiar de foco: {int(args.foco * 100)}% no mesmo grupo).")
     A("")
     A(f"## Veredito: **{veredito}**")
     A("")
     A(leitura)
     A("")
+
+    if conc["top2_pct"] is not None:
+        A(f"**Concentracao:** os 2 maiores videos somam {conc['top2_pct']}% das "
+          f"views classificadas. Mediana do canal {human(conc['mediana_canal'])} "
+          f"vs media {human(conc['media_canal'])}.")
+        if conc["top2_pct"] >= 50:
+            A("")
+            A("> ATENCAO: com essa concentracao, **views medias sao artefato de "
+              "outlier**. Leia a coluna mediana e, principalmente, views/dia. "
+              "Nao afirme que um micro performa melhor so pela media.")
+        A("")
+
     for nivel in ("nicho", "subnicho", "microsubnicho"):
         A(f"### Distribuicao por {nivel}")
         A("")
-        A("| grupo | videos | % | views medias | views medianas | melhor video |")
-        A("|---|---|---|---|---|---|")
-        for t in niveis[nivel]:
-            A(
-                f"| {t['grupo']} | {t['n']} | {t['pct']}% "
-                f"| {human(t['views_media'])} | {human(t['views_mediana'])} "
-                f"| {t['melhor'].replace('|', '/')} |"
-            )
+        A("| grupo | videos | % | views/dia (mediana) | mediana | media | melhor video |")
+        A("|---|---|---|---|---|---|---|")
+        for t in sorted(niveis[nivel], key=lambda x: -(x["vd_mediana"] or 0)):
+            vd = f"{t['vd_mediana']:.1f}" if t["vd_mediana"] is not None else "?"
+            A(f"| {t['grupo']} | {t['n']} | {t['pct']}% | **{vd}** "
+              f"| {human(t['mediana'])} | {human(t['media'])} "
+              f"| {t['melhor'].replace('|', '/')} |")
         A("")
+        A("> Ordenado por views/dia, nao por volume. Views acumulam: video de "
+          "ontem nunca empata com video de dois meses em views cruas.")
+        A("")
+
+    A("## Micro-alvo (para subnichar o conteudo)")
+    A("")
+    if not alvo:
+        A("Sem views suficientes para eleger um micro-alvo.")
+    else:
+        A(f"**Micro-alvo — o que melhor performa:** {alvo['grupo']}")
+        A(f"- {alvo['n']} videos | {alvo['vd_mediana']:.1f} views/dia "
+          f"| mediana {human(alvo['mediana'])} | views: {alvo['views_lista']}")
+        A("")
+        if dominante and dominante["grupo"] != alvo["grupo"]:
+            dvd_n = dominante["vd_mediana"]
+            dvd = f"{dvd_n:.1f}" if dvd_n is not None else "?"
+            A(f"**Micro dominante — o que o canal mais produz:** "
+              f"{dominante['grupo']} ({dominante['n']} videos, {dvd} views/dia)")
+            A("")
+            gap = (alvo["vd_mediana"] / dvd_n) if dvd_n else None
+            if gap is not None and gap >= args.gap_minimo:
+                A(f"> **O canal esta produzindo mais do que NAO e o seu melhor "
+                  f"formato** — o alvo entrega {gap:.2f}x o dominante por dia. "
+                  f"Esse e o desalinhamento central: subnichar o conteudo "
+                  f"significa mover a producao do dominante para o alvo.")
+            else:
+                A(f"> Alvo e dominante estao tecnicamente EMPATADOS "
+                  f"({gap:.2f}x de diferenca)" if gap is not None else
+                  "> Sem views/dia no dominante para comparar")
+                A("> — nao ha evidencia de que um formato supere o outro. "
+                  "Nao venda o alvo como vencedor: o canal ainda nao achou "
+                  "seu formato. Subnichar aqui e ESCOLHER um e testar a serio, "
+                  "nao migrar producao com base nesses numeros.")
+        else:
+            A("O micro que o canal mais produz e tambem o que melhor performa: "
+              "producao e desempenho estao alinhados.")
+        if alvo_fraco:
+            A("")
+            A(f"> SINAL FRACO: o micro-alvo tem so {alvo['n']} video(s) "
+              f"(minimo pedido: {args.min_amostra}). Trate como hipotese a "
+              f"testar, nao como conclusao.")
+        A("")
+
     A("## A mistura esta ajudando ou atrapalhando?")
     A("")
-    A(f"Micro dominante: **{dominante_nome}** "
-      f"({s_dom['n']} videos, media {human(s_dom['media'])} views).")
     if julgamento is None:
-        A("")
-        A("Nao ha videos fora do micro dominante (ou faltam views): sem "
-          "comparacao possivel.")
+        A("Sem comparacao possivel (nao ha videos fora do micro-alvo, ou "
+          "faltam views).")
     else:
-        rotulo, ratio, texto = julgamento
-        A(f"Fora dele: {s_resto['n']} videos, media {human(s_resto['media'])} "
-          f"views — **{ratio:.2f}x** o desempenho do dominante.")
+        rotulo, ratio, texto, n_dentro, s_fora = julgamento
+        A(f"Dentro do micro-alvo: {n_dentro} videos. Fora: {s_fora['n']} videos, "
+          f"{s_fora['vd_mediana']:.1f} views/dia — **{ratio:.2f}x** o "
+          f"micro-alvo.")
         A("")
         A(f"**A mistura esta {rotulo}:** {texto}")
     A("")
+
     (dom_antigo, dom_recente, pivo, n_ant, n_rec) = tempo
     A("## Antigo vs recente")
     A("")
@@ -991,8 +1064,15 @@ def relatorio_mistura(coleta, itens, niveis, veredito, leitura, julgamento,
         A(f"- ultimos {n_rec} videos: dominante **{dom_recente[0]}** "
           f"({dom_recente[1]}%)")
         A("")
-        A("**Houve pivo:** o canal trocou de linha." if pivo
-          else "Sem pivo: a linha recente e a mesma de sempre.")
+        if pivo:
+            A("**Houve pivo:** o canal trocou de linha.")
+            if alvo and dom_recente[0] != alvo["grupo"]:
+                A("")
+                A("> O pivo **nao** foi para o micro-alvo. O canal mudou de "
+                  "rumo e errou o alvo — diga isso explicitamente.")
+        else:
+            A("Sem pivo: a linha recente e a mesma de sempre.")
+
     if faltando or nao_classificados:
         A("")
         A("## Pendencias")
@@ -1001,8 +1081,8 @@ def relatorio_mistura(coleta, itens, niveis, veredito, leitura, julgamento,
               f"{', '.join(faltando[:10])}")
         if nao_classificados:
             A(f"- {len(nao_classificados)} videos coletados ficaram SEM "
-              f"classificacao, entao a distribuicao acima nao cobre o canal "
-              f"inteiro. Primeiros: "
+              f"classificacao, entao a distribuicao nao cobre o canal inteiro. "
+              f"Primeiros: "
               + "; ".join(vids[i]["titulo"][:50] for i in nao_classificados[:5]))
     return "\n".join(L)
 
@@ -1044,6 +1124,11 @@ def main():
                    help="share minimo para considerar focado (padrao 0.8)")
     m.add_argument("--janela-recente", type=float, default=0.3,
                    help="fracao final dos videos tratada como 'recente' (0.3)")
+    m.add_argument("--min-amostra", type=int, default=3,
+                   help="minimo de videos para um micro poder ser alvo (3)")
+    m.add_argument("--gap-minimo", type=float, default=1.25,
+                   help="vantagem minima em views/dia do alvo sobre o "
+                        "dominante para falar de desalinhamento (1.25)")
     m.add_argument("--out", help="arquivo markdown de saida")
     m.set_defaults(func=mistura)
 

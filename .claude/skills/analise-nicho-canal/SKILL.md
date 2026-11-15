@@ -1,6 +1,6 @@
 ---
 name: analise-nicho-canal
-description: Diagnostica o nicho de QUALQUER canal do YouTube — nicho, subnicho, microsubnicho, se o canal esta misturando esses niveis (e se a mistura ajuda ou atrapalha) e a estrutura/formula dos titulos. Use quando a pessoa mandar um canal, link, @handle, nome de canal ou uma lista de titulos e perguntar "qual o nicho desse canal", "qual o subnicho", "microsubnicho", "esse canal esta misturando nicho", "qual a estrutura de titulo dele", "analisa esse canal pra mim", "what niche is this channel", "title formula".
+description: Diagnostica o nicho de QUALQUER canal do YouTube — nicho, subnicho, microsubnicho, se o canal esta misturando esses niveis (e se a mistura ajuda ou atrapalha), a estrutura/formula dos titulos, e no fim SUBNICHA o conteudo: estreita o canal num micro-alvo unico e quebra ele em linhas de conteudo. Use quando a pessoa mandar um canal, link, @handle, nome de canal ou uma lista de titulos e perguntar "qual o nicho desse canal", "qual o subnicho", "microsubnicho", "esse canal esta misturando nicho", "qual a estrutura de titulo dele", "analisa esse canal pra mim", "what niche is this channel", "title formula".
 ---
 
 # Analise de nicho, mistura e estrutura de titulo
@@ -13,6 +13,9 @@ de titulos colada — entregar cinco coisas:
 3. **Microsubnicho**
 4. **Esta misturando?** (em qual nivel, e se isso ajuda ou atrapalha)
 5. **Estrutura de titulo** (formula reutilizavel)
+6. **O conteudo subnichado** — nao basta diagnosticar: tem que estreitar o
+   canal num micro-alvo e quebrar esse micro em linhas de conteudo (Passo 5).
+   Analise sem subnichamento esta incompleta.
 
 Responda sempre em portugues do Brasil. Titulos do canal ficam no idioma
 original, com traducao pt-BR ao lado quando nao forem em portugues.
@@ -125,10 +128,24 @@ python3 .claude/skills/analise-nicho-canal/scripts/analisar_canal.py mistura \
   --dados /tmp/canal.json --classificacao /tmp/classif.tsv --out /tmp/mistura.md
 ```
 
-   Ele devolve: distribuicao nos tres niveis (n, %, views medias e medianas por
-   grupo), o veredito, a comparacao do micro dominante contra o resto, e antigo
-   vs recente (pivo). `--foco 0.8` ajusta o limiar; `--janela-recente 0.3`
-   ajusta o que conta como "fase recente".
+   Ele devolve:
+   - **distribuicao nos tres niveis**, ordenada por **views/dia** (mediana) —
+     nao por volume e nao por views cruas, porque views acumulam e video de
+     ontem nunca empata com video de dois meses;
+   - **aviso de concentracao**: se os 2 maiores videos somam >=50% das views,
+     ele marca que **views medias sao artefato de outlier** e que a leitura
+     tem que sair de mediana e views/dia. Respeite esse aviso — e o erro mais
+     facil de cometer neste tipo de canal;
+   - o **veredito** de mistura;
+   - o **micro-alvo** (o que melhor performa) contra o **micro dominante** (o
+     que o canal mais produz), e se os dois estao desalinhados ou empatados;
+   - a mistura ajudando / neutra / atrapalhando, em views/dia;
+   - antigo vs recente, e se o pivo foi para o alvo ou para o lado errado.
+
+   Flags: `--foco 0.8` (limiar de foco), `--janela-recente 0.3` (fase recente),
+   `--min-amostra 3` (minimo de videos para um micro poder ser alvo),
+   `--gap-minimo 1.25` (vantagem minima em views/dia para falar de
+   desalinhamento em vez de empate).
 
 3. Escala do veredito (o script aplica, voce interpreta):
 
@@ -140,9 +157,13 @@ python3 .claude/skills/analise-nicho-canal/scripts/analisar_canal.py mistura \
 | Nichos diferentes | **Mistura de nicho** | Problema de identidade: publicos que nao se encontram. |
 
 4. **Nao pare no rotulo.** Diga com numero se a mistura ajuda ou atrapalha
-   ("os videos fora do micro principal fazem 0,4x as views do principal") e o
-   que fazer: focar em qual micro, cortar qual subnicho, ou pivotar se o lado
-   "de fora" performa melhor.
+   ("o que esta fora do micro-alvo entrega 0,30x por dia") e o que fazer. Mas
+   leia o aviso de concentracao antes: num canal onde 2 videos sao 89% das
+   views, **nenhum micro tem desempenho comprovado** — ali a resposta honesta e
+   "o canal ainda nao achou o formato", nao "corte o micro X".
+
+5. **Nunca pare no diagnostico.** O Passo 5 (subnichar o conteudo) e parte da
+   entrega, nao um extra.
 
 Se os dados forem so titulos sem views: faca a classificacao e a distribuicao
 a mao, e diga que a parte de performance ficou de fora.
@@ -167,7 +188,47 @@ O script conta padroes; a formula quem escreve e voce, lendo os titulos.
 6. Se o canal mistura, diga se **a estrutura de titulo tambem muda** entre os
    grupos — muitas vezes o titulo e o que esta denunciando a mistura.
 
-## Passo 5 — formato da entrega
+## Passo 5 — subnichar o conteudo (obrigatorio)
+
+Diagnosticar e metade do trabalho. Toda analise termina **subnichando**:
+estreitar o que o canal faz ate UM micro defensavel e quebrar esse micro em
+linhas de conteudo. Sem isso ela fica com um laudo na mao e nada para gravar.
+
+1. **Micro-alvo sai de desempenho, nunca de volume.** O relatorio do Passo 3 ja
+   elege o micro-alvo por **views/dia** (nao por views cruas, que premiam video
+   antigo) e ja avisa quando o alvo so **empata** com o micro dominante. Se
+   empatou, nao existe vencedor: diga isso na cara e trate o subnichamento como
+   uma escolha a testar, nao como migracao de producao.
+
+2. **Escreva o micro-alvo numa frase de quatro pecas:**
+   `[publico] assiste [formato] sobre [recorte] para [promessa]`.
+   Faltando uma peca, ainda e subnicho disfarcado de micro.
+
+3. **Quebre o micro-alvo em 2-3 linhas (series) nomeadas.** Cada uma com: nome,
+   formula de titulo, cadencia, e o que ela entrega que as outras nao entregam.
+   Micro sem linhas de conteudo nao e executavel.
+
+4. **Subnicha o acervo.** Cada video existente recebe um destino: **mantem**,
+   **re-enquadra** no micro-alvo, ou **sai da pauta**. Diga quantos saem e
+   quanta producao isso libera.
+
+5. **Subnicha tambem cada ideia nova.** Nenhum tema e entregue em nivel de nicho
+   ou subnicho. Toda ideia desce ate: tema + angulo + formato + a promessa que
+   vai no parentese/travessao. "Falar de comida antiga" nao e ideia; e categoria.
+
+6. **Teste do vizinho.** Se o titulo ou a ideia serve igualzinho para outro canal
+   do mesmo subnicho, nao esta subnichado. Reescreva ate que so ESTE canal
+   pudesse ter publicado aquilo.
+
+7. **Reconcilie com a identidade declarada.** Compare o micro-alvo com a
+   descricao e o nome do canal. Se a descricao promete um nicho e os videos
+   entregam outro, isso e mistura declarada — e as vezes o conserto e reescrever
+   a descricao, nao mudar os videos.
+
+8. **Diga o custo de nao subnichar**, com numero do relatorio: quantos % da
+   producao esta fora do micro-alvo e quantas views/dia isso deixa na mesa.
+
+## Passo 6 — formato da entrega
 
 ```
 ## Canal: [nome] | [inscritos] | [n videos longos lidos] | criado em [data] | idioma
@@ -199,8 +260,20 @@ O script conta padroes; a formula quem escreve e voce, lendo os titulos.
 
 **Padroes gerais:** tamanho, pessoa gramatical, gatilhos, palavras recorrentes.
 
+### Conteudo subnichado
+**Micro-alvo:** [publico] assiste [formato] sobre [recorte] para [promessa]
+- por que este: [views/dia do alvo vs dominante; ou "empate, logo e escolha"]
+
+**Linhas de conteudo:**
+1. `[nome da serie]` — formula: `...` | cadencia: ... | entrega: ...
+2. `[nome da serie]` — ...
+
+**Acervo:** mantem N | re-enquadra N | sai da pauta N ([quais grupos])
+**Custo de nao subnichar:** X% da producao fora do alvo, a Y views/dia contra Z.
+
 ### Como replicar (so se ela pedir)
-3 titulos novos na formula campea.
+3 titulos novos na formula campea, cada um ja subnichado (tema + angulo +
+formato + promessa).
 ```
 
 ## Cuidados
@@ -211,5 +284,9 @@ O script conta padroes; a formula quem escreve e voce, lendo os titulos.
 - Canal com menos de ~8 videos longos: faca a analise, mas avise que o padrao e
   o veredito de mistura ainda sao pouco confiaveis.
 - Nao leia a tabela inteira em voz alta. Comente o que muda a decisao dela.
+- **Nunca entregue o diagnostico sem o subnichamento do Passo 5.** Dizer
+  "esta misturando" e parar ali deixa o trabalho na metade.
+- Nao chame de micro-alvo o grupo que so tem 1 ou 2 videos sem avisar que e
+  hipotese. O relatorio marca isso como SINAL FRACO — repasse o aviso.
 - Shorts nunca entram na conta. Se o canal e majoritariamente Shorts, diga isso
   — e um fato sobre o canal, nao uma falha da coleta.
